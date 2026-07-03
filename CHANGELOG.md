@@ -1,5 +1,20 @@
 # Changelog
 
+## Version 0.4.0
+- V14
+
+## Version 0.3.10
+- Fix issue with achievements tab
+
+## Version 0.3.9
+- Fix css on affliction tab
+
+## Version 0.3.8
+- Add inside fast point change btns
+
+## Version 0.3.7
+- Fix heal btn
+
 ## Version 0.3.6
 - Small css changes for party btns
 

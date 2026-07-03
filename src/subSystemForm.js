@@ -1,4 +1,25 @@
-class SubSystemForm extends FormApplication {
+class SubSystemForm extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2) {
+
+    static DEFAULT_OPTIONS = {
+        tag: "form",
+        id: `${moduleName}-configure`,
+        classes: [moduleName],
+        window: {title: "Subsystems Config", resizable: true},
+        position: {width: 500},
+        actions: {},
+        form: {
+            handler: this.formHandler,
+            closeOnSubmit: false,
+            submitOnChange: false,
+        },
+    };
+
+    static PARTS = {
+        main: {
+            template: "modules/pf2e-party-sheet-helper/templates/sub-systems.hbs",
+            root: true,
+        },
+    };
 
     subsystemData = undefined;
     dropListValue = undefined;
@@ -10,13 +31,13 @@ class SubSystemForm extends FormApplication {
         this.subsystemData = this.getSubsystemData(this.dropListValue)
     }
 
-    getData() {
-        return foundry.utils.mergeObject(super.getData(), {
+    async _prepareContext() {
+        return {
             rows: this.subsystemData,
             dropListValue: this.dropListValue,
             pregenVisibility: !["reputation", "infiltration", "research", "chases"].includes(this.dropListValue) ? 'hidden' : 'visible',
             addVisibility: !["reputation", "victory-points", "influence"].includes(this.dropListValue) ? 'hidden' : 'visible',
-        });
+        };
     }
 
     getSubsystemData(name) {
@@ -36,21 +57,11 @@ class SubSystemForm extends FormApplication {
         this.subsystemData = this.getSubsystemData(this.dropListValue)
     }
 
-    static get defaultOptions() {
-        return foundry.utils.mergeObject(super.defaultOptions, {
-            title: "Subsystems Config",
-            id: `${moduleName}-configure`,
-            classes: [moduleName],
-            template: "modules/pf2e-party-sheet-helper/templates/sub-systems.hbs",
-            width: 500,
-            height: "auto",
-            closeOnSubmit: false,
-            submitOnChange: false,
-            resizable: true,
-        });
-    }
-
-    async _updateObject(_event, data) {
+    static async formHandler(_event, _form, formData) {
+        const data = {
+            "row-name": formData.object["row-name"] ? [formData.object["row-name"]].flat() : [],
+            "row-value": formData.object["row-value"] ? [formData.object["row-value"]].flat().map((value) => Number(value)) : [],
+        };
         const obj = {};
         if (data['row-name']) {
             let names = typeof data['row-name'] === 'string' ? [data['row-name']] : data['row-name'];
@@ -63,11 +74,12 @@ class SubSystemForm extends FormApplication {
         await this.saveSubsystemData(obj);
     }
 
-    activateListeners(html) {
-        super.activateListeners(html);
+    async _onRender(context, options) {
+        await super._onRender(context, options);
+        const root = this.element;
 
-        html.find('a.create-pregen').click(async (event) => {
-            const sub = html.find('.drop-list').val();
+        root.querySelector('a.create-pregen')?.addEventListener("click", async () => {
+            const sub = root.querySelector('.drop-list')?.value;
             if ("infiltration" === sub) {
                 this.subsystemData["Infiltration Points"] ??= 0;
                 this.subsystemData["Awareness Points"] ??= 0;
@@ -86,8 +98,8 @@ class SubSystemForm extends FormApplication {
 
                 this.render(true);
             } else if ("reputation" === sub) {
-                const {map} = await Dialog.wait({
-                    title: "Choose Adventure",
+                const result = await foundry.applications.api.DialogV2.wait({
+                    window: {title: "Choose Adventure"},
                     content: `
                         <h3>Adventures</h3>
                             <select id="map">
@@ -97,21 +109,22 @@ class SubSystemForm extends FormApplication {
                             <option value=3>Sky Kings Tomb</option>
                         </select><hr>
                     `,
-                    buttons: {
-                        ok: {
-                            label: "Choose",
-                            icon: "<i class='fa-solid fa-hand-fist'></i>",
-                            callback: (html) => {
-                                return {map: parseInt(html[0].querySelector("#map").value)}
-                            }
-                        },
-                        cancel: {
-                            label: "Cancel",
-                            icon: "<i class='fa-solid fa-ban'></i>",
+                    rejectClose: false,
+                    buttons: [{
+                        action: "ok",
+                        label: "Choose",
+                        icon: "fa-solid fa-hand-fist",
+                        default: true,
+                        callback: (_event, button) => {
+                            return {map: parseInt(button.form.elements.map.value)};
                         }
-                    },
-                    default: "ok"
+                    }, {
+                        action: "cancel",
+                        label: "Cancel",
+                        icon: "fa-solid fa-ban",
+                    }]
                 });
+                const map = result?.map;
                 if (map === undefined) {
                     return;
                 }
@@ -150,31 +163,34 @@ class SubSystemForm extends FormApplication {
             }
         });
 
-        html.find('a.remove-subsystem-row').click(async (event) => {
-            const a = $(event.currentTarget).closest('.package-overview').find('[name="row-name"]').val();
-            delete this.subsystemData[a];
-            this.render(true);
+        root.querySelectorAll('a.remove-subsystem-row').forEach((button) => {
+            button.addEventListener("click", async (event) => {
+                const a = $(event.currentTarget).closest('.package-overview').find('[name="row-name"]').val();
+                delete this.subsystemData[a];
+                this.render(true);
+            });
         });
 
-        html.find('a.create-subsystem-row').click(async (event) => {
-            const {name} = await Dialog.wait({
-                title: "Add new record",
+        root.querySelector('a.create-subsystem-row')?.addEventListener("click", async () => {
+            const result = await foundry.applications.api.DialogV2.wait({
+                window: {title: "Add new record"},
                 content: `<input type="text" name="name" />`,
-                buttons: {
-                    ok: {
-                        label: "Add",
-                        icon: "<i class='fas fa-plus'></i>",
-                        callback: (html) => {
-                            return {name: html.find('input').val()}
-                        }
-                    },
-                    cancel: {
-                        label: "Cancel",
-                        icon: "<i class='fa-solid fa-ban'></i>",
+                rejectClose: false,
+                buttons: [{
+                    action: "ok",
+                    label: "Add",
+                    icon: "fas fa-plus",
+                    callback: (_event, button) => {
+                        return {name: button.form.elements.name.value};
                     }
-                },
-                default: "cancel"
+                }, {
+                    action: "cancel",
+                    label: "Cancel",
+                    icon: "fa-solid fa-ban",
+                    default: true,
+                }]
             });
+            const name = result?.name;
             if (!name) {
                 return
             }
@@ -183,7 +199,7 @@ class SubSystemForm extends FormApplication {
             this.render(true);
         });
 
-        html.find('.drop-list').change(async (event) => {
+        root.querySelector('.drop-list')?.addEventListener("change", async (event) => {
             this.dropListValue = $(event.currentTarget).val();
             this.subsystemData = this.getSubsystemData(this.dropListValue);
             this.render(true);
@@ -255,23 +271,58 @@ Hooks.on('pf2e.systemReady', function () {
         CONFIG.Actor.sheetClasses.party['pf2e.PartySheetPF2e'].cls.prototype._renderInner = async function (data, options) {
             let html = await or.call(this, data, options);
             if (game.user.isGM || game.settings.get(moduleName, "showSubsystem")) {
+                let party = this.object;
                 const content = `
                 <section class="tab sidebar-tab directory flexcol subsystem-section">
                     <ol class="directory-list subsystem-list">
-                        ${subSystemRows(this.object)}
+                        ${subSystemRows(party)}
                     </ol>
                 </section>`
 
                 html.find('.sub-nav:not(.sub-sub-nav)').append('<a data-tab="sub-system" class="">Subsystems</a>')
                 html.find('.container').append(`<div class="tab" data-tab="sub-system" data-region="sub-system"><div class="content">${content}</div></div>`)
 
-                html.find('.container').find('.subsystem-list').find('.directory-item').on("click", async function (event) {
-                    event.preventDefault();
-                    let target = $(event.currentTarget);
+                html.on('click', '.directory-item.folder > .folder-header', function (e) {
+                    e.preventDefault();
+                    const li = $(this).closest('.directory-item.folder');
+                    let subSystem = li.data().subSystem;
 
-                    target.toggleClass('collapsed expanded')
-                })
+                    if (isGM() && subSystem) {
+                        let currentState = li.hasClass('collapsed') ? 'expanded' : 'collapsed';
 
+                        party.setFlag(moduleName, "subsystems-expand", {
+                            [subSystem]: currentState
+                        })
+                    } else {
+                        li.toggleClass('collapsed expanded');
+                    }
+                });
+
+                html.on('click', '.increase-sub-system-value', function (e) {
+                    e.preventDefault();
+                    let name = $(this).data().name;
+                    let subSystem = $(this).data().subSystem;
+                    if (subSystem && name) {
+                        const subSystems = (party.getFlag(moduleName, "subsystems") ?? {})
+                        if (subSystems?.[subSystem]?.[name] !== undefined) {
+                            subSystems[subSystem][name] += 1;
+                            party.setFlag(moduleName, "subsystems", subSystems)
+                        }
+                    }
+                });
+
+                html.on('click', '.decrease-sub-system-value', function (e) {
+                    e.preventDefault();
+                    let name = $(this).data().name;
+                    let subSystem = $(this).data().subSystem;
+                    if (subSystem && name) {
+                        const subSystems = (party.getFlag(moduleName, "subsystems") ?? {})
+                        if (subSystems?.[subSystem]?.[name] !== undefined) {
+                            subSystems[subSystem][name] -= 1;
+                            party.setFlag(moduleName, "subsystems", subSystems)
+                        }
+                    }
+                });
             }
             return html;
         }
@@ -378,14 +429,17 @@ const subSystemLabels = {
 
 function subSystemRows(party) {
     const subSystems = (party.getFlag(moduleName, "subsystems") ?? {})
+    const subSystemsExpand = (party.getFlag(moduleName, "subsystems-expand") ?? {})
 
     return Object.keys(subSystems).map(obj => {
-        let a = `<li class="directory-item folder flexcol collapsed">
+        let state = subSystemsExpand[obj] ?? 'collapsed';
+
+        let a = `<li class="directory-item folder flexcol ${state}" data-sub-system="${obj}">
           <header class="folder-header flexrow">
             <h3 class="noborder"><i class="fas fa-folder-open fa-fw"></i>${subSystemLabels[obj]}</h3>
           </header>
           <ol class="subdirectory plain">
-                ${subSystemRow(subSystems[obj], SUBSYSTEM_TIERS_LABELS[obj])}
+                ${subSystemRow(obj, subSystems[obj], SUBSYSTEM_TIERS_LABELS[obj])}
           </ol>
         </li>`
         return a;
@@ -404,12 +458,22 @@ function getTierLabelByValue(value, labels) {
     return ` (${game.i18n.localize(r[1])})`
 }
 
-function subSystemRow(subSystem, labels) {
+function subSystemRow(subSystemName, subSystem, labels) {
     return Object.entries(subSystem).sort()
         .map(a => `<li class="directory-item entry" style="display: flex;flex-direction: row;">
-                <h3 class="entry-name">${a[0]}</h3><label>${a[1]}${getTierLabelByValue(a[1], labels)}</label>
+                <h3 class="entry-name">${a[0]}</h3><span>${subSystemRowSpanText(subSystemName, a[0], a[1], labels)}</span>
             </li>`
         ).join("");
+}
+
+function subSystemRowSpanText(subSystemName, name, value, labels) {
+    if (game.user.isGM) {
+        return ` <i class="fa-solid fa-minus decrease-sub-system-value" data-sub-system="${subSystemName}" data-name="${name}" ></i>   `
+            + value
+            + `   <i class="fa-solid fa-plus increase-sub-system-value" data-sub-system="${subSystemName}" data-name="${name}" ></i> `
+            + getTierLabelByValue(value, labels);
+    }
+    return value + getTierLabelByValue(value, labels);
 }
 
 //Influence
